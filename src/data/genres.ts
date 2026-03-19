@@ -2172,4 +2172,4 @@ export const getGenreById = (id: string): Genre | undefined =>
   genres.find((g) => g.id === id)
 
 // MVP: only these genre IDs are available. Add more as they're ready.
-export const availableGenreIds: string[] = ['salsa']
+export const availableGenreIds: string[] = ['salsa', 'bachata']
