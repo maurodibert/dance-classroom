@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getGenreById } from '../data/genres'
 import type { Level, Step } from '../data/types'
+import { StepPlayer } from '../remotion/StepPlayer'
 
 const levelColors: Record<Level, { accent: string; badge: string; bar: string; border: string }> = {
   inicial: {
@@ -87,6 +88,13 @@ function StepCard({
         <div className="px-5 pb-5" style={{ animation: 'fade-in 0.25s ease-out both' }}>
           <div className="ml-11">
             <p className="text-gray-300 text-sm leading-relaxed">{step.description}</p>
+
+            {step.id === 'bach-i-11' && (
+              <div className="mt-4 rounded-xl overflow-hidden">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Animación esquemática</p>
+                <StepPlayer />
+              </div>
+            )}
 
             {step.videoUrl && (
               <div className="mt-4 rounded-xl overflow-hidden" style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
