@@ -36,9 +36,11 @@ function buildBody(
   const hipY = 93 - flex * 9
   const hipZ = (lFz + rFz) / 2
 
-  const chest: V3  = [hipX * 0.38, 130, hipZ * 0.25]
-  const neck:  V3  = [hipX * 0.18, 153, hipZ * 0.12]
-  const head:  V3  = [hipX * 0.12, 172, hipZ * 0.08]
+  // Torso stays vertical above hip center; small counter-lean on snap only
+  const lean       = hipSnap * 0.08   // subtle upper-body counter-lean against hip pop
+  const chest: V3  = [hipX + lean,        130, hipZ * 0.3]
+  const neck:  V3  = [hipX + lean * 1.3,  155, hipZ * 0.15]
+  const head:  V3  = [hipX + lean * 1.5,  175, hipZ * 0.08]
 
   const lHipJ: V3  = [hipX - 12, hipY, hipZ]
   const rHipJ: V3  = [hipX + 12, hipY, hipZ]
@@ -56,12 +58,12 @@ function buildBody(
 
   // Arms swing opposite to hip drift (natural counter-rotation)
   const swing = -hipSnap * 0.35
-  const lSh: V3   = [chest[0] - 22, 145, chest[2]]
-  const rSh: V3   = [chest[0] + 22, 145, chest[2]]
-  const lEl: V3   = [chest[0] - 28 + swing * 0.4, 115,  5 + swing * 0.5]
-  const rEl: V3   = [chest[0] + 28 - swing * 0.4, 115, -5 - swing * 0.5]
-  const lHa: V3   = [chest[0] - 32 + swing,        88,  8 + swing * 0.8]
-  const rHa: V3   = [chest[0] + 32 - swing,        88, -8 - swing * 0.8]
+  const lSh: V3   = [hipX - 22 + lean, 148, chest[2]]
+  const rSh: V3   = [hipX + 22 + lean, 148, chest[2]]
+  const lEl: V3   = [hipX - 26 + swing * 0.4, 120,  5 + swing * 0.5]
+  const rEl: V3   = [hipX + 26 - swing * 0.4, 120, -5 - swing * 0.5]
+  const lHa: V3   = [hipX - 30 + swing,        95,  8 + swing * 0.8]
+  const rHa: V3   = [hipX + 30 - swing,        95, -8 - swing * 0.8]
 
   return {
     lFoot: [lFx, lFy, lFz],
