@@ -7,7 +7,7 @@ export const StepPlayer: React.FC = () => (
     durationInFrames={152}
     fps={30}
     compositionWidth={480}
-    compositionHeight={400}
+    compositionHeight={520}
     style={{ width: '100%', borderRadius: '12px', overflow: 'hidden' }}
     controls
     loop
