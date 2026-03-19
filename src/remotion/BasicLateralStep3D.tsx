@@ -5,7 +5,7 @@ const W  = 480
 const H  = 520
 const PW = W / 2          // 240 — panel width
 const PH = H / 2          // 260 — panel height
-const SCALE       = 1.0   // body-units → px
+const SCALE       = 1.0
 const FLOOR_LOCAL = 225   // px from panel top where y=0 body-space sits
 const SUP_CY      = 155   // px from panel top where z=0 sits (superior view)
 
@@ -17,26 +17,37 @@ const T      = { beat1: 18, beat2: 52, beat3: 86, golpe: 120, end: 152 }
 const SP     = { damping: 13, mass: 0.8, stiffness: 115 }
 const SP_HIP = { damping: 7,  mass: 0.4, stiffness: 210 }
 
-// ─── Projections (body-space → 2D) ───────────────────────────────────────────
-type ProjFn = (v: V3) => [number, number]
+// ─── Projections & depth functions ───────────────────────────────────────────
+type ProjFn  = (v: V3) => [number, number]
+type DepthFn = (v: V3) => number
+
+// Orthographic projections
 const frente  : ProjFn = ([x, y   ]) => [ x,  y]
 const costado : ProjFn = ([ , y, z]) => [ z,  y]
-const diagonal: ProjFn = ([x, y, z]) => [x * 0.71 - z * 0.71, y]
-const superior: ProjFn = ([x,  , z]) => [ x, -z]  // top-down: X=left-right, -Z=forward
+const diagonal: ProjFn = ([x, y, z]) => [x * 0.71 + z * 0.71, y]  // camera: front-left
+const superior: ProjFn = ([x,  , z]) => [ x, -z]                   // top-down
 
-type Panel = { ox: number; oy: number; label: string; proj: ProjFn; isTop: boolean }
+// Depth: higher value = closer to camera = drawn last (on top)
+const depthFrente  : DepthFn = ([, , z]) =>  z
+const depthCostado : DepthFn = ([x    ]) =>  x   // camera at +X
+const depthDiagonal: DepthFn = ([x, , z]) => z - x  // front-left: high z + low x = close
+const depthSuperior: DepthFn = ([, y   ]) =>  y   // higher y = on top when looking down
+
+type Panel = {
+  ox: number; oy: number; label: string
+  proj: ProjFn; depth: DepthFn; isTop: boolean
+}
 const PANELS: Panel[] = [
-  { ox: 0,  oy: 0,  label: 'SUPERIOR', proj: superior, isTop: true  },
-  { ox: PW, oy: 0,  label: 'FRENTE',   proj: frente,   isTop: false },
-  { ox: 0,  oy: PH, label: 'COSTADO',  proj: costado,  isTop: false },
-  { ox: PW, oy: PH, label: '45°',      proj: diagonal, isTop: false },
+  { ox: 0,  oy: 0,  label: 'SUPERIOR', proj: superior,  depth: depthSuperior,  isTop: true  },
+  { ox: PW, oy: 0,  label: 'FRENTE',   proj: frente,    depth: depthFrente,    isTop: false },
+  { ox: 0,  oy: PH, label: 'COSTADO',  proj: costado,   depth: depthCostado,   isTop: false },
+  { ox: PW, oy: PH, label: '45°',      proj: diagonal,  depth: depthDiagonal,  isTop: false },
 ]
 
 // ─── Screen mapping ───────────────────────────────────────────────────────────
 function toScreen(
   [bx, by]: [number, number],
-  ox: number, oy: number,
-  isTop: boolean
+  ox: number, oy: number, isTop: boolean
 ): [number, number] {
   if (isTop) return [ox + PW / 2 + bx * SCALE, oy + SUP_CY + by * SCALE]
   return [ox + PW / 2 + bx * SCALE, oy + FLOOR_LOCAL - by * SCALE]
@@ -47,16 +58,16 @@ function buildBody(
   lFx: number, lFy: number, lFz: number,
   rFx: number, rFy: number, rFz: number,
   hipSnap: number,
-  flex: number
+  flex: number,
+  armBeat: number   // -1..+1 beat-driven oscillation
 ): Record<string, V3> {
   const hipX = (lFx + rFx) / 2 + hipSnap
   const hipY = 93 - flex * 9
   const hipZ = (lFz + rFz) / 2
 
-  // Torso stays vertical; subtle counter-lean on hip snap
-  const lean  = hipSnap * 0.08
-  const chest: V3 = [hipX + lean,       125, hipZ * 0.3]
-  const neck:  V3 = [hipX + lean * 1.3, 152, hipZ * 0.15]
+  const lean   = hipSnap * 0.08
+  const chest: V3 = [hipX + lean,       125, hipZ * 0.3 + 2]
+  const neck:  V3 = [hipX + lean * 1.3, 152, hipZ * 0.15 + 1]
   const head:  V3 = [hipX + lean * 1.5, 172, hipZ * 0.08]
 
   const lHip: V3 = [hipX - 13, hipY, hipZ]
@@ -73,109 +84,154 @@ function buildBody(
     rFz * 0.6 - 4,
   ]
 
-  // Shoulder twist gives the COSTADO view interesting content
-  const twist = hipSnap * -0.55
-  const lSh: V3 = [hipX - 20 + lean, 147, hipZ + twist]
-  const rSh: V3 = [hipX + 20 + lean, 147, hipZ - twist]
+  // Toes: extend from foot forward-outward (shows foot shape in costado/45°)
+  const lToe: V3 = [lFx - 5, lFy, lFz + 15]
+  const rToe: V3 = [rFx + 5, rFy, rFz + 15]
 
-  // Arms counter-swing (natural rotation opposite to hip drift)
-  const swing = -hipSnap * 0.35
-  const lEl: V3 = [hipX - 24 + swing * 0.3, 118,  twist * 0.8 + swing * 0.5]
-  const rEl: V3 = [hipX + 24 - swing * 0.3, 118, -twist * 0.8 - swing * 0.5]
-  const lHa: V3 = [hipX - 28 + swing,        93,  twist * 1.2 + swing * 0.8]
-  const rHa: V3 = [hipX + 28 - swing,        93, -twist * 1.2 - swing * 0.8]
+  // Shoulder twist (gives content to COSTADO view)
+  const twist = hipSnap * -0.55
+  const lSh: V3 = [hipX - 20 + lean, 147, chest[2] + twist]
+  const rSh: V3 = [hipX + 20 + lean, 147, chest[2] - twist]
+
+  // Arms — FIX: elbows significantly forward in Z + hands ABOVE elbows
+  // In bachata: relaxed bent-elbow hold, forearms angle upward
+  const armFwd = 18                          // baseline Z offset (elbows in front of torso)
+  const swing  = -hipSnap * 0.4 + armBeat * 6  // golpe counter + beat pulse
+
+  const lEl: V3 = [
+    hipX - 23 + lean + swing * 0.3,
+    108,                                   // elbow sits slightly above hip
+    chest[2] + armFwd + twist * 0.6 + swing * 0.4,
+  ]
+  const rEl: V3 = [
+    hipX + 23 + lean - swing * 0.3,
+    108,
+    chest[2] + armFwd - twist * 0.6 - swing * 0.4,
+  ]
+
+  // Hands: forearm bends UPWARD from elbow (natural "open hold" position)
+  const lHa: V3 = [
+    hipX - 16 + lean + swing * 0.6,
+    122,                                   // above elbow — clave del fix
+    chest[2] + armFwd + 9 + twist * 0.8 + swing * 0.6,
+  ]
+  const rHa: V3 = [
+    hipX + 16 + lean - swing * 0.6,
+    122,
+    chest[2] + armFwd + 9 - twist * 0.8 - swing * 0.6,
+  ]
+
+  // Fingertips: extend from wrist in elbow→hand direction
+  const extend = (a: V3, b: V3, dist: number): V3 => {
+    const dx = b[0]-a[0], dy = b[1]-a[1], dz = b[2]-a[2]
+    const len = Math.hypot(dx, dy, dz) || 1
+    return [b[0]+dx/len*dist, b[1]+dy/len*dist, b[2]+dz/len*dist]
+  }
+  const lTip = extend(lEl, lHa, 9)
+  const rTip = extend(rEl, rHa, 9)
 
   return {
-    lFoot: [lFx, lFy, lFz],
-    rFoot: [rFx, rFy, rFz],
+    lFoot: [lFx, lFy, lFz], rFoot: [rFx, rFy, rFz],
+    lToe, rToe,
     lKnee, rKnee,
     lHip, rHip,
     hipC: [hipX, hipY, hipZ],
     chest, neck, head,
-    lSh, rSh, lEl, rEl, lHa, rHa,
+    lSh, rSh, lEl, rEl, lHa, rHa, lTip, rTip,
   }
 }
 
-// ─── Figure renderer ──────────────────────────────────────────────────────────
-// Uses thick capsules (stroke-width) + filled torso polygon for a solid, body-like look
+// ─── Figure renderer (depth-sorted per view) ──────────────────────────────────
 function renderFigure(
   joints: Record<string, V3>,
-  proj: ProjFn,
+  proj: ProjFn, depthFn: DepthFn,
   ox: number, oy: number,
-  isTop: boolean,
-  isGolpe: boolean
+  isTop: boolean, isGolpe: boolean
 ): React.ReactNode[] {
-  const s  = (n: string) => toScreen(proj(joints[n]), ox, oy, isTop)
+  const s = (n: string) => toScreen(proj(joints[n]), ox, oy, isTop)
+  const d = (n: string) => depthFn(joints[n])
   const els: React.ReactNode[] = []
 
-  // Capsule segment helper
+  // Which side is in front (per view, dynamically)
+  const leftLegFront = d('lFoot') >= d('rFoot')
+  const leftArmFront = d('lEl')   >= d('rEl')
+
   const cap = (key: string, a: string, b: string, color: string, w: number, opacity = 1) => {
-    const [x1, y1] = s(a)
-    const [x2, y2] = s(b)
+    const [x1, y1] = s(a), [x2, y2] = s(b)
     els.push(
       <line key={key} x1={x1} y1={y1} x2={x2} y2={y2}
         stroke={color} strokeWidth={w} strokeLinecap="round" opacity={opacity} />
     )
   }
 
-  // Filled polygon helper
-  const poly = (key: string, names: string[], fill: string, opacity = 1) => {
-    const pts = names.map(n => s(n).join(',')).join(' ')
-    els.push(<polygon key={key} points={pts} fill={fill} opacity={opacity} />)
+  // Helper to draw one full leg
+  const drawLeg = (side: 'l' | 'r', opacity = 1) => {
+    const [thC, shC] = side === 'l'
+      ? ['#10b981', '#059669'] : ['#047857', '#065f46']
+    cap(`${side}thigh`, `${side}Hip`,  `${side}Knee`, thC, 14, opacity)
+    cap(`${side}shin`,  `${side}Knee`, `${side}Foot`, shC,  9, opacity)
+    cap(`${side}toe`,   `${side}Foot`, `${side}Toe`,  thC,  7, opacity)
   }
 
-  // ── Draw order: back → front ─────────────────────────────────────────────
+  // Helper to draw one full arm
+  const drawArm = (side: 'l' | 'r', opacity = 1) => {
+    const [uaC, faC] = side === 'l'
+      ? ['#8b5cf6', '#a78bfa'] : ['#6d28d9', '#7c3aed']
+    cap(`${side}ua`,   `${side}Sh`,  `${side}El`,  uaC, 7, opacity)
+    cap(`${side}fa`,   `${side}El`,  `${side}Ha`,  faC, 5, opacity)
+    cap(`${side}hand`, `${side}Ha`,  `${side}Tip`, faC, 3, opacity)
+  }
 
-  // 1. Right leg (back — darker emerald)
-  cap('rthigh', 'rHip',  'rKnee', '#047857', 13, 0.8)
-  cap('rshin',  'rKnee', 'rFoot', '#065f46',  8, 0.8)
+  // ── Draw order: back → front ──────────────────────────────────────────────
 
-  // 2. Right arm (back — darker violet)
-  cap('rua', 'rSh', 'rEl', '#6d28d9', 6, 0.75)
-  cap('rfa', 'rEl', 'rHa', '#6d28d9', 4, 0.75)
+  // Back leg
+  drawLeg(leftLegFront ? 'r' : 'l', 0.75)
 
-  // 3. Torso — filled trapezoid (shoulders wider than hips)
-  poly('torso-body', ['lSh', 'rSh', 'rHip', 'lHip'], '#3b0764', 0.92)
+  // Back arm
+  drawArm(leftArmFront ? 'r' : 'l', 0.72)
 
-  // 4. Hip and shoulder bars add volume to torso edges
+  // Torso polygon (shoulder → hip trapezoid)
+  const tPts = ['lSh', 'rSh', 'rHip', 'lHip'].map(n => s(n).join(',')).join(' ')
+  els.push(<polygon key="torso-body" points={tPts} fill="#3b0764" opacity={0.93} />)
+
+  // Hip bar, shoulder bar, spine, neck
   cap('hipbar', 'lHip', 'rHip', '#5b21b6', 11)
   cap('shbar',  'lSh',  'rSh',  '#4c1d95', 10)
+  cap('spine',  'hipC', 'neck', '#5b21b6',  8)
+  cap('nk',     'neck', 'head', '#6d28d9',  7)
 
-  // 5. Spine + neck
-  cap('spine', 'hipC', 'neck', '#5b21b6', 8)
-  cap('nk',    'neck', 'head', '#6d28d9', 7)
+  // Front leg
+  drawLeg(leftLegFront ? 'l' : 'r')
 
-  // 6. Left leg (front — bright emerald)
-  cap('lthigh', 'lHip',  'lKnee', '#10b981', 13)
-  cap('lshin',  'lKnee', 'lFoot', '#059669',  8)
+  // Front arm
+  drawArm(leftArmFront ? 'l' : 'r')
 
-  // 7. Left arm (front — lighter violet)
-  cap('lua', 'lSh', 'lEl', '#8b5cf6', 6)
-  cap('lfa', 'lEl', 'lHa', '#8b5cf6', 4)
+  // ── Joints always on top ──────────────────────────────────────────────────
 
-  // 8. Head (amber circle with soft highlight)
-  const [hx, hy] = s('head')
-  els.push(<circle key="head"    cx={hx}     cy={hy}     r={12} fill="#fbbf24" />)
-  els.push(<circle key="head-hi" cx={hx - 3} cy={hy - 3} r={4}  fill="#fde68a" opacity={0.45} />)
-
-  // 9. Hip center dot (glows on golpe)
+  // Hip center
   const [hipx, hipy] = s('hipC')
-  if (isGolpe) {
-    els.push(<circle key="hipglow" cx={hipx} cy={hipy} r={13} fill="#f59e0b" opacity={0.18} />)
-  }
+  if (isGolpe) els.push(
+    <circle key="hipglow" cx={hipx} cy={hipy} r={13} fill="#f59e0b" opacity={0.18} />
+  )
   els.push(<circle key="hip" cx={hipx} cy={hipy} r={5} fill={isGolpe ? '#f59e0b' : '#a78bfa'} />)
 
-  // 10. Knees (small dark circles)
-  const [lkx, lky] = s('lKnee')
-  const [rkx, rky] = s('rKnee')
-  els.push(<circle key="lk" cx={lkx} cy={lky} r={5} fill="#064e3b" />)
-  els.push(<circle key="rk" cx={rkx} cy={rky} r={5} fill="#022c22" />)
+  // Knees
+  ;(['lKnee', 'rKnee'] as const).forEach((jt, i) => {
+    const [kx, ky] = s(jt)
+    els.push(<circle key={`k${i}`} cx={kx} cy={ky} r={5} fill={i === 0 ? '#064e3b' : '#022c22'} />)
+  })
 
-  // 11. Feet (circles with outline)
-  const [lfx, lfy] = s('lFoot')
-  const [rfx, rfy] = s('rFoot')
-  els.push(<circle key="lf" cx={lfx} cy={lfy} r={7} fill="#34d399" stroke="#059669" strokeWidth={1.5} />)
-  els.push(<circle key="rf" cx={rfx} cy={rfy} r={7} fill="#059669" stroke="#047857" strokeWidth={1.5} />)
+  // Feet
+  ;['lFoot', 'rFoot'].forEach((jt, i) => {
+    const [fx, fy] = s(jt)
+    const [fill, stroke] = i === 0 ? ['#34d399', '#059669'] : ['#059669', '#047857']
+    els.push(<circle key={`f${i}`} cx={fx} cy={fy} r={7} fill={fill} stroke={stroke} strokeWidth={1.5} />)
+  })
+
+  // Head (amber with subtle highlight)
+  const [hx, hy] = s('head')
+  els.push(<circle key="head"    cx={hx}     cy={hy}     r={13} fill="#fbbf24" />)
+  els.push(<circle key="head-hi" cx={hx - 4} cy={hy - 4} r={4.5} fill="#fde68a" opacity={0.4} />)
 
   return els
 }
@@ -204,22 +260,22 @@ export const BasicLateralStep3D: React.FC = () => {
     return spring({ frame: frame - T.golpe, fps, config: SP, from: X1, to: X2 })
   })()
 
-  // ── Foot Y lift (parabolic arc while moving)
+  // ── Foot Y lift (parabolic arc)
   const liftAmount = 14
   const lFy = (() => {
-    const t1 = interpolate(frame, [T.beat1, (T.beat1 + T.beat2) / 2, T.beat2], [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-    const t3 = interpolate(frame, [T.beat3, (T.beat3 + T.golpe) / 2, T.golpe], [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    const t1 = interpolate(frame, [T.beat1, (T.beat1+T.beat2)/2, T.beat2], [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    const t3 = interpolate(frame, [T.beat3, (T.beat3+T.golpe)/2, T.golpe], [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
     return Math.max(t1, t3)
   })()
   const rFy = (() => {
-    const t2 = interpolate(frame, [T.beat2, (T.beat2 + T.beat3) / 2, T.beat3], [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-    const tg = interpolate(frame, [T.golpe, (T.golpe + T.end) / 2, T.end],     [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    const t2 = interpolate(frame, [T.beat2, (T.beat2+T.beat3)/2, T.beat3], [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    const tg = interpolate(frame, [T.golpe, (T.golpe+T.end)/2, T.end],     [0, liftAmount, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
     return Math.max(t2, tg)
   })()
 
-  // ── Foot Z arc (adds content to COSTADO and 45° views)
+  // ── Foot Z arc (forward arc when stepping — adds content to COSTADO/45°)
   const arc = (a: number, b: number) =>
-    interpolate(frame, [a, (a + b) / 2, b], [0, 14, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    interpolate(frame, [a, (a+b)/2, b], [0, 14, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
   const lFz = Math.max(arc(T.beat1, T.beat2), arc(T.beat3, T.golpe))
   const rFz = Math.max(arc(T.beat2, T.beat3), arc(T.golpe, T.end))
 
@@ -230,13 +286,18 @@ export const BasicLateralStep3D: React.FC = () => {
 
   // ── Knee flex on golpe
   const flex = frame >= T.golpe
-    ? interpolate(
-        spring({ frame: frame - T.golpe, fps, config: SP_HIP, from: 0, to: 1 }),
-        [0, 1], [0, 1]
-      )
+    ? spring({ frame: frame - T.golpe, fps, config: SP_HIP, from: 0, to: 1 })
     : 0
 
-  const joints  = buildBody(lFx, lFy, lFz, rFx, rFy, rFz, hipSnap, flex)
+  // ── Beat-driven arm pulse (arms oscillate with each step, not just golpe)
+  const armBeat = interpolate(
+    frame,
+    [0, T.beat1, T.beat2, T.beat3, T.golpe, T.end],
+    [0, 1, -0.4, 1, 0, 0],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+  )
+
+  const joints  = buildBody(lFx, lFy, lFz, rFx, rFy, rFz, hipSnap, flex, armBeat)
   const isGolpe = frame >= T.golpe
 
   // ── Beat label
@@ -262,10 +323,10 @@ export const BasicLateralStep3D: React.FC = () => {
         ))}
 
         {/* Dividers */}
-        <line x1={PW}     y1={12} x2={PW}     y2={H - 12} stroke="#1e293b" strokeWidth={1} />
-        <line x1={0}      y1={PH} x2={W}       y2={PH}     stroke="#1e293b" strokeWidth={1} />
+        <line x1={PW} y1={12} x2={PW} y2={H - 12} stroke="#1e293b" strokeWidth={1} />
+        <line x1={0}  y1={PH} x2={W}  y2={PH}     stroke="#1e293b" strokeWidth={1} />
 
-        {/* Floor lines (only for non-top panels) */}
+        {/* Floor lines (non-top panels only) */}
         {PANELS.filter(p => !p.isTop).map(({ ox, oy }, i) => (
           <line key={i}
             x1={ox + 16} y1={oy + FLOOR_LOCAL}
@@ -273,8 +334,8 @@ export const BasicLateralStep3D: React.FC = () => {
             stroke="#1e293b" strokeWidth={1} strokeDasharray="4 3" />
         ))}
 
-        {/* Superior: "front" direction indicator */}
-        <text x={PANELS[0].ox + PW / 2} y={PANELS[0].oy + SUP_CY - 60}
+        {/* Superior: compass arrow */}
+        <text x={PANELS[0].ox + PW / 2} y={PANELS[0].oy + SUP_CY - 58}
           textAnchor="middle" fill="#1e293b" fontSize={8} fontFamily="system-ui">▲ frente</text>
 
         {/* View labels */}
@@ -286,26 +347,26 @@ export const BasicLateralStep3D: React.FC = () => {
           </text>
         ))}
 
-        {/* Figures — one per panel */}
-        {PANELS.map(({ ox, oy, proj, isTop }, i) => (
+        {/* Figures — depth-sorted per panel */}
+        {PANELS.map(({ ox, oy, proj, depth, isTop }, i) => (
           <g key={i}>
-            {renderFigure(joints, proj, ox, oy, isTop, isGolpe)}
+            {renderFigure(joints, proj, depth, ox, oy, isTop, isGolpe)}
           </g>
         ))}
 
         {/* Legend */}
         <g transform={`translate(8, ${H - 18})`}>
           <circle cx={6}   cy={0} r={5} fill="#34d399" />
-          <text x={15} y={4} fill="#475569" fontSize={8} fontFamily="system-ui">Pie I</text>
+          <text x={15}  y={4} fill="#475569" fontSize={8} fontFamily="system-ui">Pie I</text>
           <circle cx={52}  cy={0} r={5} fill="#059669" />
-          <text x={61} y={4} fill="#475569" fontSize={8} fontFamily="system-ui">Pie D</text>
+          <text x={61}  y={4} fill="#475569" fontSize={8} fontFamily="system-ui">Pie D</text>
           <circle cx={98}  cy={0} r={5} fill="#5b21b6" />
           <text x={107} y={4} fill="#475569" fontSize={8} fontFamily="system-ui">Torso</text>
           <circle cx={148} cy={0} r={5} fill="#fbbf24" />
           <text x={157} y={4} fill="#475569" fontSize={8} fontFamily="system-ui">Cabeza</text>
         </g>
 
-        {/* Beat badge — bottom center */}
+        {/* Beat badge */}
         {beat && (
           <g opacity={labelAlpha}>
             <rect x={W / 2 - 36} y={H - 36} width={72} height={26} rx={13}
