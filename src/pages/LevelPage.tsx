@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { getGenreById } from '../data/genres'
 import type { Level, Step } from '../data/types'
 import { StepPlayer } from '../remotion/StepPlayer'
+import { useBeta } from '../hooks/useBeta'
 
 const levelColors: Record<Level, { accent: string; badge: string; bar: string; border: string }> = {
   inicial: {
@@ -33,6 +34,9 @@ function StepCard({
   borderColor,
   isExpanded,
   onToggle,
+  isBeta,
+  isKnown,
+  onToggleKnown,
 }: {
   step: Step
   index: number
@@ -41,28 +45,48 @@ function StepCard({
   borderColor: string
   isExpanded: boolean
   onToggle: () => void
+  isBeta: boolean
+  isKnown: boolean
+  onToggleKnown: () => void
 }) {
   return (
     <div
       className={`border rounded-2xl transition-all duration-300 ${
         isExpanded
           ? `${borderColor} bg-gray-900`
+          : isKnown
+          ? 'border-emerald-900/50 bg-emerald-950/20 hover:bg-emerald-950/30'
           : 'border-gray-800/60 bg-gray-900/50 hover:bg-gray-900 hover:border-gray-700'
       }`}
       style={{ animation: 'card-enter 0.4s ease-out both', animationDelay: `${index * 55}ms` }}
     >
       <button className="w-full text-left px-5 py-4" onClick={onToggle}>
         <div className="flex items-center gap-3">
+          {/* Badge — clickable as "mark known" toggle in beta mode */}
           <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-colors duration-200 ${
-              isExpanded ? `${accent} bg-gray-800` : 'text-gray-700 bg-gray-800'
-            }`}
+            onClick={isBeta ? (e) => { e.stopPropagation(); onToggleKnown() } : undefined}
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-all duration-200 ${
+              isKnown
+                ? 'bg-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                : isExpanded
+                ? `${accent} bg-gray-800`
+                : 'text-gray-700 bg-gray-800'
+            } ${isBeta ? 'cursor-pointer hover:scale-110 active:scale-95' : ''}`}
+            title={isBeta ? (isKnown ? 'Marcar como no conocido' : 'Marcar como conocido') : undefined}
           >
-            {index + 1}
+            {isKnown ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              index + 1
+            )}
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className={`font-medium transition-colors duration-200 ${isExpanded ? 'text-white' : 'text-gray-300'}`}>
+            <p className={`font-medium transition-colors duration-200 ${
+              isKnown ? 'text-emerald-300' : isExpanded ? 'text-white' : 'text-gray-300'
+            }`}>
               {step.name}
             </p>
             {!isExpanded && (
@@ -135,6 +159,7 @@ export default function LevelPage() {
   const { id, level } = useParams<{ id: string; level: string }>()
   const navigate = useNavigate()
   const [expandedStep, setExpandedStep] = useState<string | null>(null)
+  const { isBeta, isKnown, toggleKnown, knownIds } = useBeta()
 
   const genre = getGenreById(id ?? '')
   const courseLevel = genre?.levels.find((l) => l.level === level)
@@ -199,6 +224,26 @@ export default function LevelPage() {
             {currentLevelIndex + 1} / {genre.levels.length}
           </span>
         </div>
+
+        {/* Beta: progress of known steps in this level */}
+        {isBeta && (() => {
+          const levelKnown = courseLevel.steps.filter(s => knownIds.has(s.id)).length
+          const total = courseLevel.steps.length
+          const pct = total > 0 ? (levelKnown / total) * 100 : 0
+          return (
+            <div className="mt-3 flex items-center gap-2.5" style={{ animation: 'fade-in 0.4s ease-out both' }}>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="text-xs text-emerald-600 shrink-0 tabular-nums font-medium">
+                {levelKnown}/{total} conocidos
+              </span>
+            </div>
+          )
+        })()}
       </header>
 
       <main className="px-4 pb-8 max-w-2xl mx-auto space-y-2.5">
@@ -216,6 +261,9 @@ export default function LevelPage() {
             borderColor={colors.border}
             isExpanded={expandedStep === step.id}
             onToggle={() => setExpandedStep(expandedStep === step.id ? null : step.id)}
+            isBeta={isBeta}
+            isKnown={isKnown(step.id)}
+            onToggleKnown={() => toggleKnown(step.id)}
           />
         ))}
       </main>
