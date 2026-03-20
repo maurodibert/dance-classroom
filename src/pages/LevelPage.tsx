@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { getGenreById } from '../data/genres'
 import type { Level, Step } from '../data/types'
 import { StepPlayer } from '../remotion/StepPlayer'
-import { useBeta } from '../hooks/useBeta'
+import { useProgress } from '../hooks/useProgress'
 
 const levelColors: Record<Level, { accent: string; badge: string; bar: string; border: string }> = {
   inicial: {
@@ -34,7 +34,6 @@ function StepCard({
   borderColor,
   isExpanded,
   onToggle,
-  isBeta,
   isKnown,
   onToggleKnown,
 }: {
@@ -45,7 +44,6 @@ function StepCard({
   borderColor: string
   isExpanded: boolean
   onToggle: () => void
-  isBeta: boolean
   isKnown: boolean
   onToggleKnown: () => void
 }) {
@@ -64,15 +62,15 @@ function StepCard({
         <div className="flex items-center gap-3">
           {/* Badge — clickable as "mark known" toggle in beta mode */}
           <div
-            onClick={isBeta ? (e) => { e.stopPropagation(); onToggleKnown() } : undefined}
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-all duration-200 ${
+            onClick={(e) => { e.stopPropagation(); onToggleKnown() }}
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-all duration-200 cursor-pointer hover:scale-110 active:scale-95 ${
               isKnown
                 ? 'bg-emerald-500 text-white shadow-[0_0_8px_rgba(16,185,129,0.5)]'
                 : isExpanded
                 ? `${accent} bg-gray-800`
                 : 'text-gray-700 bg-gray-800'
-            } ${isBeta ? 'cursor-pointer hover:scale-110 active:scale-95' : ''}`}
-            title={isBeta ? (isKnown ? 'Marcar como no conocido' : 'Marcar como conocido') : undefined}
+            }`}
+            title={isKnown ? 'Marcar como no conocido' : 'Ya lo sé'}
           >
             {isKnown ? (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -159,7 +157,7 @@ export default function LevelPage() {
   const { id, level } = useParams<{ id: string; level: string }>()
   const navigate = useNavigate()
   const [expandedStep, setExpandedStep] = useState<string | null>(null)
-  const { isBeta, isKnown, toggleKnown, knownIds } = useBeta()
+  const { isKnown, toggleKnown, knownIds } = useProgress()
 
   const genre = getGenreById(id ?? '')
   const courseLevel = genre?.levels.find((l) => l.level === level)
@@ -225,8 +223,8 @@ export default function LevelPage() {
           </span>
         </div>
 
-        {/* Beta: progress of known steps in this level */}
-        {isBeta && (() => {
+        {/* Progress of known steps in this level */}
+        {(() => {
           const levelKnown = courseLevel.steps.filter(s => knownIds.has(s.id)).length
           const total = courseLevel.steps.length
           const pct = total > 0 ? (levelKnown / total) * 100 : 0
@@ -261,7 +259,6 @@ export default function LevelPage() {
             borderColor={colors.border}
             isExpanded={expandedStep === step.id}
             onToggle={() => setExpandedStep(expandedStep === step.id ? null : step.id)}
-            isBeta={isBeta}
             isKnown={isKnown(step.id)}
             onToggleKnown={() => toggleKnown(step.id)}
           />

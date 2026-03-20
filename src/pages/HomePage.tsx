@@ -1,16 +1,42 @@
 import { useNavigate } from 'react-router-dom'
 import { genres, availableGenreIds } from '../data/genres'
+import { useAuth } from '../context/AuthContext'
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { user, signOut } = useAuth()
+
+  const avatar = user?.user_metadata?.avatar_url as string | undefined
+  const initials = (user?.email ?? 'U')[0].toUpperCase()
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Hero */}
       <header
-        className="pt-16 pb-10 px-4 text-center"
+        className="pt-16 pb-10 px-4 text-center relative"
         style={{ animation: 'hero-enter 0.6s ease-out both' }}
       >
+        {/* User avatar + signout */}
+        <button
+          onClick={signOut}
+          title="Cerrar sesión"
+          className="absolute top-4 right-4 group flex items-center gap-2"
+        >
+          <span className="text-gray-700 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            Salir
+          </span>
+          {avatar ? (
+            <img
+              src={avatar}
+              alt="avatar"
+              className="w-8 h-8 rounded-full border border-gray-800 group-hover:border-gray-600 transition-colors"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gray-800 border border-gray-700 group-hover:border-gray-500 flex items-center justify-center text-xs font-bold text-gray-400 transition-colors">
+              {initials}
+            </div>
+          )}
+        </button>
         <div className="text-6xl mb-5 select-none">💃</div>
         <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-3">
           <span
